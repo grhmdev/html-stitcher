@@ -1,2 +1,2 @@
 default:
-	html-stitcher . -v
+	html-stitcher ./src -o ./dist

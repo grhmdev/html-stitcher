@@ -11,38 +11,82 @@ const xml2js = require("xml2js");
 var options;
 var inputArg;
 
-const div = "==================================";
-const print = (msg) => process.stdout.write(`${msg}\n`);
+const div = "================";
 
-let log = {
-    debug: (msg) => {
+class Logger {
+    constructor() {}
+    print(msg) {
+        process.stdout.write(`${msg}`);
+    }
+    debug(msg) {
         if (options.verbose) {
-            print(msg);
+            this.print(`${msg}\n`);
         }
-    },
-    info: (msg) => {
+    }
+    info(msg) {
         if (options.verbose) {
-            print(msg);
+            this.print(`${msg}\n`);
         }
-    },
-    warn: (msg) => print(msg),
-};
+    }
+    warn(msg) {
+        this.print(`${msg}\n`);
+    }
+    error(msg) {
+        this.print(`${msg}\n`);
+    }
+}
+var log = new Logger();
+
+class Timer {
+    constructor() {
+        this.reset();
+    }
+    reset() {
+        this.startTime = new Date().getTime();
+    }
+    elapsed() {
+        return new Date().getTime() - this.startTime;
+    }
+}
+
+class FileInfo {
+    constructor(filePath) {
+        this.path = filePath;
+        this.absolutePath = path.resolve(filePath);
+        this.parentDir = path.dirname(this.absolutePath);
+        this.name = path.basename(filePath);
+        // Obtain the name leading up to the first "."
+        this.nameStem = path.parse(filePath).name;
+        const dotIndex = this.nameStem.indexOf(".");
+        if (dotIndex != -1) {
+            this.nameStem = this.nameStem.slice(0, dotIndex);
+        }
+    }
+}
 
 function run() {
-    const startTime = new Date().getTime();
-
-    parseArgs();
-    checkArgs();
-
-    if (fs.lstatSync(inputArg).isFile()) {
-        processFile(inputArg, options.includeFileGlob, options.output);
-    } else {
-        processDirectory(inputArg, options.includeFileGlob, options.buildFileGlob, options.output);
+    try {
+        const runTimer = new Timer();
+        parseArgs();
+        checkArgs();
+        if (fs.lstatSync(inputArg).isFile()) {
+            processFile(inputArg, options.partialFileGlob, options.output);
+        } else {
+            const outputDir = options.output ? options.output : inputArg;
+            processDirectory(
+                inputArg,
+                options.partialFileGlob,
+                options.rootFileGlob,
+                outputDir
+            );
+        }
+        log.info(`Finished in ${runTimer.elapsed()}ms`);
+        process.exitCode = 0;
+    } catch (exception) {
+        log.info(`${div} Errors`);
+        log.error(exception);
+        process.exitCode = 1;
     }
-
-    const runDuration = new Date().getTime() - startTime;
-    log.info(`Finished in ${runDuration}ms`);
-    process.exitCode = 0;
 }
 
 function parseArgs() {
@@ -55,71 +99,125 @@ function parseArgs() {
             "-o, --output <output location>",
             "path of file or directory to write outputs to"
         )
-        .option("-b, --build-file-glob", "glob pattern", "**/*[!partial].htm*")
-        .option("-i, --include-file-glob", "glob pattern", "**/*.htm*")
-        .option("-r, --recurse", "", false)
+        .option("-r, --root-file-glob", "glob pattern", "**/*[!partial].html")
+        .option("-p, --partial-file-glob", "glob pattern", "**/*.html")
         .argument(
             "<input>",
-            "path of base HTML file to compile, or directory containing multiple files to compile"
+            "path of root HTML file or directory of root HTML files to build"
         );
 
     program.parse();
 
     options = program.opts();
     inputArg = program.args[0];
-
-    if (!options.verbose) {
-        log.debug = (msg) => { };
-        log.info = (msg) => { };
-    }
 }
 
 function checkArgs() {
+    // Validate input
     if (!fs.existsSync(inputArg)) {
         throw `Input path does not exist: ${inputArg}`;
     }
 
     const inputPath = path.resolve(inputArg);
-    const stat = fs.lstatSync(inputPath);
-
-    if (!(stat.isFile() || stat.isDirectory())) {
-        throw `Input path is not a file or directory: ${inputPath}`;
+    const inputStat = fs.lstatSync(inputPath);
+    if (!(inputStat.isFile() || inputStat.isDirectory())) {
+        throw `Input path is not a file or directory: ${inputArg}`;
     }
-}
 
-class FileInfo {
-    constructor(filePath) {
-        this.absolutePath = path.resolve(filePath);
-        this.absoluteDir = path.dirname(this.absolutePath);
-        this.name = path.basename(filePath);
-        // Obtain the name leading up to the first "."
-        this.nameStem = path.parse(filePath).name;
-        const dotIndex = this.nameStem.indexOf(".");
-        if (dotIndex != -1) {
-            this.nameStem = this.nameStem.slice(0, dotIndex);
+    if (inputStat.isDirectory() && !options.output) {
+        throw `Output directory required for batch mode (--output) ${inputArg}`;
+    }
+
+    // Validate output
+    if (options.output) {
+        if (!fs.existsSync(options.output)) {
+            throw `Output path does not exist: ${options.output}`;
+        }
+
+        const outputPath = path.resolve(options.output);
+        const outputStat = fs.lstatSync(outputPath);
+        if (!(outputStat.isFile() || outputStat.isDirectory())) {
+            throw `Output path is not a file or directory: ${options.output}`;
+        }
+
+        if (outputStat.isFile()) {
+            if (inputStat.isDirectory()) {
+                throw `Output path must be a directory: ${options.output}`;
+            }
+            if (outputPath == inputPath) {
+                throw `Output path cannot be the same as the input path: ${options.output}`;
+            }
         }
     }
 }
 
-function processFile(inputFilePath, includeFileGlob, outputFilePath) {
-    const buildableFile = new FileInfo(inputFilePath);
-    const includeFiles = discoverFiles(
-        buildableFile.absoluteDir,
-        includeFileGlob,
-        [buildableFile.absolutePath]
-    );
-    includeFiles.forEach( file => { log.info(`INCLUDE ${file.absolutePath}`)});
-    renderHtmlFile(buildableFile, includeFiles, outputFilePath);
+async function processFile(rootFilePath, partialFileGlob, outputFilePath) {
+    const rootFile = new FileInfo(rootFilePath);
+    const partialFiles = discoverFiles(rootFile.parentDir, partialFileGlob, [
+        rootFile.absolutePath,
+    ]);
+    partialFiles.forEach((file) => {
+        log.info(`Found partial file ${file.path}`);
+    });
+    await compileHtmlFile(outputFilePath, rootFile, partialFiles, false);
 }
 
-function renderHtmlFile(buildableFile, includeFiles, outputFilePath) {
+function processDirectory(
+    inputDirPath,
+    partialFileGlob,
+    rootFileGlob,
+    outputDirPath
+) {
+    const absoluteInputDirPath = path.resolve(inputDirPath);
+
+    let rootFiles = discoverFiles(inputDirPath, rootFileGlob);
+    rootFiles.forEach((file) => {
+        log.info(`Found root file ${file.path}`);
+    });
+    let partialFiles = discoverFiles(inputDirPath, partialFileGlob);
+    // Remove any root files from the set of partial files
+    partialFiles = partialFiles.filter((partialFile) => {
+        return (
+            rootFiles.find(
+                (rootFile) => rootFile.absolutePath == partialFile.absolutePath
+            ) == undefined
+        );
+    });
+    partialFiles.forEach((file) => {
+        log.info(`Found partial file ${file.path}`);
+    });
+
+    let timer = new Timer();
+    rootFiles.forEach((file) => {
+        timer.reset();
+        const relativePathToInputDir = file.absolutePath.substring(
+            absoluteInputDirPath.length,
+            file.absolutePath.length
+        );
+        let outputPath = outputDirPath + relativePathToInputDir;
+
+        if (outputPath == file.absolutePath) {
+            outputPath += ".out";
+        }
+        compileHtmlFile(outputPath, file, partialFiles, true);
+        log.print(`${file.path} => ${outputPath} ${timer.elapsed()}ms\n`);
+    });
+}
+
+async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
+    log.info(`${div} Building ${rootFile.path}`);
     let outputStream;
     let outputStr = "";
+    let streamClosed = false;
     if (outputFilePath) {
+        // Create the target file if necessary
+        if (!fs.existsSync(outputFilePath)) {
+            createFileAndDirs(outputFilePath);
+        }
         // Create output stream to file
         outputStream = fs.createWriteStream(outputFilePath);
         outputStream.on("close", () => {
-            log.info(`OUTPUT ${outputFilePath}`);
+            streamClosed = true;
         });
     } else {
         // Create output stream to string
@@ -130,51 +228,33 @@ function renderHtmlFile(buildableFile, includeFiles, outputFilePath) {
         };
         outputStream.on("close", () => {
             log.info(`${div} Output ${div}`);
-            print(outputStr);
+            log.print(outputStr);
+            streamClosed = true;
         });
     }
 
-    build(buildableFile, includeFiles, outputStream);
+    renderHtml(rootFile, partialFiles, outputStream);
     outputStream.end();
 }
 
-function processDirectory(
-    inputDirPath,
-    includeFileGlob,
-    buildFileGlob,
-    outputDirPath
-) {
-    let buildableFiles = discoverFiles(
-        inputDirPath,
-        buildFileGlob
-    );
-    let includeFiles = discoverFiles(
-        inputDirPath,
-        includeFileGlob
-    );
-    // Remove any build files from the include files, 
-    includeFiles = includeFiles.filter( includeFile => {
-        return buildableFiles.find(buildableFile => buildableFile.absolutePath == includeFile.absolutePath) == undefined
-    });
-    includeFiles.forEach( file => { log.info(`INCLUDE ${file.absolutePath}`)});
-
-    buildableFiles.forEach((file) => {
-        const outputPath = `${outputDirPath}/${file.name}.out`;
-        renderHtmlFile(file, includeFiles, outputPath);
-    });
+function createFileAndDirs(filePath) {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, "");
 }
-
 
 /** Scans an input directory using the provided glob pattern to return a list of FileInfos. */
 function discoverFiles(inputDir, fileGlob, excludeList = []) {
     let htmlFiles = [];
 
-    let includeFiles = glob.sync(`${inputDir}/${fileGlob}`);
+    const files = glob.sync(`${inputDir}/${fileGlob}`);
     excludeList.forEach((path) => {
-        const index = includeFiles.indexOf(path);
-        if (index > -1) includeFiles.splice(index, 1);
+        const index = files.indexOf(path);
+        if (index > -1) files.splice(index, 1);
     });
-    includeFiles.forEach((path) => {
+    files.forEach((path) => {
         htmlFiles.push(new FileInfo(path));
     });
     return htmlFiles;
@@ -268,7 +348,7 @@ class FileBuffer {
 
 /** Renders HTML for a given input file. This process has the following steps:
  *  1. The file is read into an in-memory buffer
- *  2. (For partial files) Each line of the buffered file is indented with the same
+ *  2. (On recursion) Each line of the buffered file is indented with the same
  *     indentation string that was present before the partial's include <element>.
  *     This is to try and preserve indentation levels in the final rendered HTML.
  *  3. The buffered file is searched for occurrences where parameters can be substituted.
@@ -285,43 +365,49 @@ class FileBuffer {
  *     with the HTML rendered for any included partial elements, and this is written to
  *     the output stream.
  */
-function build(
+function renderHtml(
     inputFile,
-    includeFiles,
+    partialFiles,
     outputStream,
     parameters = {},
     indent = ""
 ) {
-    log.info(`BUILD ${inputFile.absolutePath}`);
-    log.debug(`  parameters: ${JSON.stringify(parameters)}`);
+    log.info(`Rendering ${inputFile.path}`);
+    log.debug(`Parameters ${JSON.stringify(parameters)}`);
 
     let fileBuffer = new FileBuffer(inputFile.absolutePath);
     fileBuffer.indentFile(indent);
 
-    // Substitute instances of ${parameter} in file
+    // Substitute instances of ${parameter} in the file
     Object.entries(parameters).forEach(([key, value]) =>
         fileBuffer.findAndReplaceParameter(key, value)
     );
 
-    let includeFilesWithoutSelf = includeFiles.filter(file => file.absolutePath != inputFile.absolutePath);
-    let partialElements = findPartialElements(fileBuffer, includeFilesWithoutSelf);
-    validatePartialElements(partialElements);
-    partialElements = partialElements.sort(
-        (element1, element2) => { return element1.startIndex - element2.startIndex }
+    // Remove this file from the list of partial files to avoid an endless recursion
+    const partialFilesWithoutSelf = partialFiles.filter(
+        (file) => file.absolutePath != inputFile.absolutePath
     );
+    let partialElements = findPartialElements(
+        fileBuffer,
+        partialFilesWithoutSelf
+    );
+    validatePartialElements(partialElements);
+    partialElements = partialElements.sort((element1, element2) => {
+        return element1.startIndex - element2.startIndex;
+    });
 
     let resumeIndex = 0;
     partialElements.forEach((element) => {
-        const partialFile = includeFiles.find(
+        const partialFile = partialFiles.find(
             (file) => file.nameStem === element.name
         );
 
         outputStream.write(
             fileBuffer.buffer.slice(resumeIndex, element.startIndex)
         );
-        build(
+        renderHtml(
             partialFile,
-            includeFiles,
+            partialFiles,
             outputStream,
             element.parameters,
             element.indent
@@ -334,9 +420,9 @@ function build(
 }
 
 /** Scans the file for and returns all instances of <partial> elements, using the name stems of the include files. */
-function findPartialElements(fileBuffer, includeFiles) {
+function findPartialElements(fileBuffer, partialFiles) {
     let partialElements = [];
-    includeFiles.forEach((fileInfo) => {
+    partialFiles.forEach((fileInfo) => {
         let partialElement;
         let searchFromIndex = 0;
         do {

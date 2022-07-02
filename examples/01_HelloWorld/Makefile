@@ -1,2 +1,6 @@
 default:
-	html-stitcher index.html -v -o output.html
+	html-stitcher index.html
+
+.PHONY: output
+output:
+	html-stitcher index.html -o output.html
