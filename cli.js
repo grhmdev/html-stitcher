@@ -99,8 +99,16 @@ function parseArgs() {
             "-o, --output <output location>",
             "path of file or directory to write outputs to"
         )
-        .option("-r, --root-file-glob", "glob pattern", "**/*[!partial].html")
-        .option("-p, --partial-file-glob", "glob pattern", "**/*.html")
+        .option(
+            "-r, --root-file-glob",
+            "Root file glob pattern",
+            "**/*[!.partial].html"
+        )
+        .option(
+            "-p, --partial-file-glob",
+            "Partial file glob pattern",
+            "**/*.html"
+        )
         .argument(
             "<input>",
             "path of root HTML file or directory of root HTML files to build"
