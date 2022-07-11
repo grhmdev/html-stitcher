@@ -138,22 +138,21 @@ function checkArgs() {
 
     // Validate output
     if (options.output) {
-        if (!fs.existsSync(options.output)) {
-            throw `Output path does not exist: ${options.output}`;
-        }
-
         const outputPath = path.resolve(options.output);
-        const outputStat = fs.lstatSync(outputPath);
-        if (!(outputStat.isFile() || outputStat.isDirectory())) {
-            throw `Output path is not a file or directory: ${options.output}`;
-        }
 
-        if (outputStat.isFile()) {
-            if (inputStat.isDirectory()) {
-                throw `Output path must be a directory: ${options.output}`;
+        if (fs.existsSync(outputPath)) {
+            const outputStat = fs.lstatSync(outputPath);
+            if (!(outputStat.isFile() || outputStat.isDirectory())) {
+                throw `Output path is not a file or directory: ${options.output}`;
             }
-            if (outputPath == inputPath) {
-                throw `Output path cannot be the same as the input path: ${options.output}`;
+
+            if (outputStat.isFile()) {
+                if (inputStat.isDirectory()) {
+                    throw `Output path must be a directory: ${options.output}`;
+                }
+                if (outputPath == inputPath) {
+                    throw `Output path cannot be the same as the input path: ${options.output}`;
+                }
             }
         }
     }
@@ -176,6 +175,9 @@ function processDirectory(
     rootFileGlob,
     outputDirPath
 ) {
+    if (!fs.existsSync(outputDirPath)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
     const absoluteInputDirPath = path.resolve(inputDirPath);
 
     let rootFiles = discoverFiles(inputDirPath, rootFileGlob);
@@ -220,7 +222,7 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
     if (outputFilePath) {
         // Create the target file if necessary
         if (!fs.existsSync(outputFilePath)) {
-            createFileAndDirs(outputFilePath);
+            createFile(outputFilePath);
         }
         // Create output stream to file
         outputStream = fs.createWriteStream(outputFilePath);
@@ -245,7 +247,7 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
     outputStream.end();
 }
 
-function createFileAndDirs(filePath) {
+function createFile(filePath) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
