@@ -87,7 +87,7 @@ async function run() {
         log.info(`Finished in ${runTimer.elapsed()}ms`);
         process.exitCode = 0;
     } catch (exception) {
-        log.error(exception);
+        log.error(`Error! : ${exception}`);
         process.exitCode = 1;
     }
 }
@@ -203,7 +203,8 @@ async function processDirectory(
     });
 
     let timer = new Timer();
-    rootFiles.forEach((file) => {
+    for (let i = 0; i < rootFiles.length; ++i) {
+        const file = rootFiles[i];
         timer.reset();
         const relativePathToInputDir = file.absolutePath.substring(
             absoluteInputDirPath.length,
@@ -214,9 +215,9 @@ async function processDirectory(
         if (outputPath == file.absolutePath) {
             outputPath += ".out";
         }
-        compileHtmlFile(outputPath, file, partialFiles, true);
+        await compileHtmlFile(outputPath, file, partialFiles, true);
         log.print(`${file.path} => ${outputPath} ${timer.elapsed()}ms\n`);
-    });
+    }
 }
 
 async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
@@ -238,13 +239,18 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
             next();
         };
         outputStream.on("close", () => {
-            log.info(`${div} Output`);
+            log.info(`${div} Output ${div}`);
             log.print(outputStr);
         });
     }
-    renderHtml(rootFile, partialFiles, outputStream);
+    try {
+        renderHtml(rootFile, partialFiles, outputStream);
+    } catch (error) {
+        throw `${rootFile.path} - ${error}`;
+    }
     outputStream.end();
-    await new Promise((fulfill) => outputStream.on("close", fulfill));
+    let promise = new Promise((fulfill) => outputStream.on("close", fulfill));
+    return promise;
 }
 
 function createFile(filePath) {
@@ -283,6 +289,7 @@ class PartialElement {
 
 class FileBuffer {
     constructor(filePath) {
+        this.filePath = filePath;
         this.buffer = fs.readFileSync(filePath).toString();
     }
     /** Inserts an indentation string at the start of all file lines */
@@ -321,7 +328,7 @@ class FileBuffer {
 
         let endTagStartIndex = this.buffer.indexOf(endToken, startIndex);
         if (endTagStartIndex == -1) {
-            throw `${startToken} partial element found without closing tag ${endToken}`;
+            throw `"${startToken}" partial element found without closing tag "${endToken}"`;
         }
         const endIndex = endTagStartIndex + endToken.length;
         const htmlElement = this.buffer.substring(startIndex, endIndex);
