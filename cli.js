@@ -64,16 +64,20 @@ class FileInfo {
     }
 }
 
-function run() {
+async function run() {
     try {
         const runTimer = new Timer();
         parseArgs();
         checkArgs();
         if (fs.lstatSync(inputArg).isFile()) {
-            processFile(inputArg, options.partialFileGlob, options.output);
+            await processFile(
+                inputArg,
+                options.partialFileGlob,
+                options.output
+            );
         } else {
             const outputDir = options.output ? options.output : inputArg;
-            processDirectory(
+            await processDirectory(
                 inputArg,
                 options.partialFileGlob,
                 options.rootFileGlob,
@@ -83,12 +87,12 @@ function run() {
         log.info(`Finished in ${runTimer.elapsed()}ms`);
         process.exitCode = 0;
     } catch (exception) {
-        log.info(`${div} Errors`);
         log.error(exception);
         process.exitCode = 1;
     }
 }
 
+/** Configures and parses CLI args */
 function parseArgs() {
     program
         .name("html-stitcher")
@@ -101,12 +105,12 @@ function parseArgs() {
         )
         .option(
             "-r, --root-file-glob",
-            "Root file glob pattern",
+            "root file glob pattern",
             "**/*[!.partial].html"
         )
         .option(
             "-p, --partial-file-glob",
-            "Partial file glob pattern",
+            "partial file glob pattern",
             "**/*.html"
         )
         .argument(
@@ -120,6 +124,7 @@ function parseArgs() {
     inputArg = program.args[0];
 }
 
+/** Performs basic validation of CLI args */
 function checkArgs() {
     // Validate input
     if (!fs.existsSync(inputArg)) {
@@ -169,7 +174,7 @@ async function processFile(rootFilePath, partialFileGlob, outputFilePath) {
     await compileHtmlFile(outputFilePath, rootFile, partialFiles, false);
 }
 
-function processDirectory(
+async function processDirectory(
     inputDirPath,
     partialFileGlob,
     rootFileGlob,
@@ -215,10 +220,9 @@ function processDirectory(
 }
 
 async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
-    log.info(`${div} Building ${rootFile.path}`);
+    log.info(`${div} Building ${rootFile.name}`);
     let outputStream;
     let outputStr = "";
-    let streamClosed = false;
     if (outputFilePath) {
         // Create the target file if necessary
         if (!fs.existsSync(outputFilePath)) {
@@ -226,9 +230,6 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
         }
         // Create output stream to file
         outputStream = fs.createWriteStream(outputFilePath);
-        outputStream.on("close", () => {
-            streamClosed = true;
-        });
     } else {
         // Create output stream to string
         outputStream = new Stream.Writable();
@@ -237,14 +238,13 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
             next();
         };
         outputStream.on("close", () => {
-            log.info(`${div} Output ${div}`);
+            log.info(`${div} Output`);
             log.print(outputStr);
-            streamClosed = true;
         });
     }
-
     renderHtml(rootFile, partialFiles, outputStream);
     outputStream.end();
+    await new Promise((fulfill) => outputStream.on("close", fulfill));
 }
 
 function createFile(filePath) {
