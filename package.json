@@ -1,13 +1,20 @@
 {
   "name": "html-stitcher",
-  "version": "0.1.0",
-  "description": "Build composite HTML files from partial files",
-  "main": "cli.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "author": "graham-mills@users.noreply.github.com",
+  "version": "0.1.0",
+  "bugs": "https://github.com/graham-mills/html-stitcher/issues",
+  "homepage": "https://github.com/graham-mills/html-stitcher",
+  "description": "CLI tool to build HTML files from partial files",
   "license": "ISC",
+  "keywords": [
+    "html",
+    "compiler",
+    "template",
+    "partial",
+    "build",
+    "component"
+  ],
+  "main": "cli.js",
   "bin": {
     "html-stitcher": "./cli.js"
   },
