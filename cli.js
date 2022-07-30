@@ -10,6 +10,7 @@ const xml2js = require("xml2js");
 
 var options;
 var inputArg;
+var inputParameters = {};
 
 const div = "================";
 
@@ -106,7 +107,7 @@ function parseArgs() {
         )
         .option("--partial-files", "partial file glob pattern", "**/*.html")
         .option(
-            "-p, --parameters",
+            "-p, --parameters <parameters...>",
             "list of key-value pairs, e.g. param1=value1 param2=value2"
         )
         .argument(
@@ -118,6 +119,21 @@ function parseArgs() {
 
     options = program.opts();
     inputArg = program.args[0];
+
+    if (options.parameters) {
+        options.parameters.forEach((pair) => {
+            const nameAndValue = pair.split("=");
+            if (
+                nameAndValue.length == 2 &&
+                nameAndValue[0].length > 0 &&
+                nameAndValue[1].length > 0
+            ) {
+                inputParameters[nameAndValue[0]] = nameAndValue[1];
+            } else {
+                throw `Invalid input "${pair}" found for --parameters options, parameters must be provided as "name=value"`;
+            }
+        });
+    }
 }
 
 /** Performs basic validation of CLI args */
@@ -240,7 +256,7 @@ async function compileHtmlFile(outputFilePath, rootFile, partialFiles) {
         });
     }
     try {
-        renderHtml(rootFile, partialFiles, outputStream);
+        renderHtml(rootFile, partialFiles, outputStream, inputParameters);
     } catch (error) {
         throw `${rootFile.path} - ${error}`;
     }
@@ -382,7 +398,7 @@ function renderHtml(
     inputFile,
     partialFiles,
     outputStream,
-    parameters = {},
+    parameters,
     indent = ""
 ) {
     log.info(`Rendering ${inputFile.path}`);
