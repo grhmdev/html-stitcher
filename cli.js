@@ -70,17 +70,13 @@ async function run() {
         parseArgs();
         checkArgs();
         if (fs.lstatSync(inputArg).isFile()) {
-            await processFile(
-                inputArg,
-                options.partialFileGlob,
-                options.output
-            );
+            await processFile(inputArg, options.partialFiles, options.output);
         } else {
             const outputDir = options.output ? options.output : inputArg;
             await processDirectory(
                 inputArg,
-                options.partialFileGlob,
-                options.rootFileGlob,
+                options.partialFiles,
+                options.rootFiles,
                 outputDir
             );
         }
@@ -104,14 +100,14 @@ function parseArgs() {
             "path of file or directory to write outputs to"
         )
         .option(
-            "-r, --root-file-glob",
+            "--root-files",
             "root file glob pattern",
             "**/*[!.partial].html"
         )
+        .option("--partial-files", "partial file glob pattern", "**/*.html")
         .option(
-            "-p, --partial-file-glob",
-            "partial file glob pattern",
-            "**/*.html"
+            "-p, --parameters",
+            "list of key-value pairs, e.g. param1=value1 param2=value2"
         )
         .argument(
             "<input>",
