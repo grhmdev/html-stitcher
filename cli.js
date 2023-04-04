@@ -150,7 +150,7 @@ function checkArgs() {
     }
 
     if (inputStat.isDirectory() && !options.output) {
-        throw `Output directory required for batch mode (--output) ${inputArg}`;
+        throw `Output directory required for directory input (--output) ${inputArg}`;
     }
 
     // Validate output
