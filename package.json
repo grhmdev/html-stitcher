@@ -1,7 +1,7 @@
 {
   "name": "html-stitcher",
   "author": "graham-mills@users.noreply.github.com",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "bugs": "https://github.com/graham-mills/html-stitcher/issues",
   "homepage": "https://github.com/graham-mills/html-stitcher",
   "description": "CLI tool to build HTML files from partial files",
